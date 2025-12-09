@@ -3,94 +3,177 @@ let books = require("./booksdb.js");
 let isValid = require("./auth_users.js").isValid;
 let users = require("./auth_users.js").users;
 const public_users = express.Router();
-const axios = require('axios');
 
-//  Task 6
-//  Register a new user
-public_users.post("/register", (req,res) => {
+// -----------------------
+// Helper Functions
+// -----------------------
+
+// Task 10: Get all books (Promise)
+const getBooks = () => {
+    return new Promise((resolve, reject) => {
+        if (books) resolve(books);
+        else reject("No books available");
+    });
+};
+
+// Task 11: Get book by ISBN (Promise)
+const getByISBN = (isbn) => {
+    return new Promise((resolve, reject) => {
+        const book = books[isbn];
+        if (book) resolve(book);
+        else reject({ status: 404, message: `ISBN ${isbn} not found` });
+    });
+};
+
+// -----------------------
+// Routes
+// -----------------------
+
+// Task 6: Register new user
+public_users.post("/register", (req, res) => {
     const { username, password } = req.body;
-    if (!username || !password) {
-      return res.status(400).json({ message: "Username and password are required" });
-    }
-    if (users.find((user) => user.username === username)) {
-      return res.status(409).json({ message: "Username already exists" });
-    }
+    if (!username || !password)
+        return res.status(400).json({ message: "Username and password required" });
+
+    if (users.find(u => u.username === username))
+        return res.status(409).json({ message: "Username already exists" });
+
     users.push({ username, password });
     return res.status(201).json({ message: "User registered successfully" });
 });
 
-//  Task10
-// Get book lists
-const getBooks = () => {
-    return new Promise((resolve, reject) => {
-        resolve(books);
-    });
-};
-
-//  Task 1
-//  Get the book list available in the shop
-public_users.get('/',async function (req, res) {
-  try {
-    const bookList = await getBooks(); 
-    res.json(bookList); // Neatly format JSON output
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error retrieving book list" });
-  }
+// Task 1 & Task 10: Get all books
+public_users.get('/', async (req, res) => {
+    try {
+        const bookList = await getBooks();
+        res.json(bookList);
+    } catch (error) {
+        res.status(500).json({ message: error });
+    }
 });
 
-//  Task 11
-// Get book details based on ISBN
-const getByISBN = (isbn) => {
-    return new Promise((resolve, reject) => {
-        let isbnNum = parseInt(isbn);
-        if (books[isbnNum]) {
-            resolve(books[isbnNum]);
-        } else {
-            reject({ status: 404, message: `ISBN ${isbn} not found` });
-        }
-    });
-};
-
-//  Task 2
-//  Get book details based on ISBN
-public_users.get('/isbn/:isbn',function (req, res) {
+// Task 2 & Task 11: Get book by ISBN
+public_users.get('/isbn/:isbn', (req, res) => {
     getByISBN(req.params.isbn)
-    .then(
-        result => res.send(result),
-        error => res.status(error.status).json({message: error.message})
-    );
- });
+        .then(book => res.json(book))
+        .catch(error => res.status(error.status || 500).json({ message: error.message || error }));
+});
 
-//  Task 3 & Task 12
-//  Get book details based on author
-public_users.get('/author/:author',function (req, res) {
+// Task 3 & Task 12: Get books by Author
+public_users.get('/author/:author', (req, res) => {
     const author = req.params.author;
     getBooks()
-    .then((bookEntries) => Object.values(bookEntries))
-    .then((books) => books.filter((book) => book.author === author))
-    .then((filteredBooks) => res.send(filteredBooks));
+        .then(allBooks => Object.values(allBooks))
+        .then(allBooks => allBooks.filter(book => book.author === author))
+        .then(filteredBooks => res.json(filteredBooks))
+        .catch(error => res.status(500).json({ message: error }));
 });
 
-//  Task 4 & Task 12
-//  Get all books based on title
-public_users.get('/title/:title',function (req, res) {
+// Task 4 & Task 13: Get books by Title
+public_users.get('/title/:title', (req, res) => {
     const title = req.params.title;
     getBooks()
-    .then((bookEntries) => Object.values(bookEntries))
-    .then((books) => books.filter((book) => book.title === title))
-    .then((filteredBooks) => res.send(filteredBooks));
+        .then(allBooks => Object.values(allBooks))
+        .then(allBooks => allBooks.filter(book => book.title === title))
+        .then(filteredBooks => res.json(filteredBooks))
+        .catch(error => res.status(500).json({ message: error }));
 });
 
-//  Task 5 & Task 13
-//  Get book review
-public_users.get('/review/:isbn',function (req, res) {
-    const isbn = req.params.isbn;
+// Task 5: Get book review
+public_users.get('/review/:isbn', (req, res) => {
     getByISBN(req.params.isbn)
-    .then(
-        result => res.send(result.reviews),
-        error => res.status(error.status).json({message: error.message})
-    );
+        .then(book => res.json(book.reviews))
+        .catch(error => res.status(error.status || 500).json({ message: error.message || error }));
 });
+
+// Task 7: Login
+public_users.post("/login", (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password)
+        return res.status(400).json({ message: "Username and password required" });
+
+    const user = users.find(u => u.username === username && u.password === password);
+    if (user) return res.status(200).json({ message: "Login successful" });
+
+    return res.status(401).json({ message: "Invalid username or password" });
+});
+
+// Task 8: Add/Modify book review
+public_users.put("/auth/review/:isbn", (req, res) => {
+    const isbn = req.params.isbn;
+    const { username, review } = req.body;
+
+    if (!username || !review)
+        return res.status(400).json({ message: "Username and review required" });
+    if (!books[isbn]) return res.status(404).json({ message: "Book not found" });
+
+    books[isbn].reviews[username] = review;
+    return res.status(200).json({ message: "Review added/updated", reviews: books[isbn].reviews });
+});
+
+// Task 9: Delete review
+public_users.delete("/auth/review/:isbn", (req, res) => {
+    const isbn = req.params.isbn;
+    const { username } = req.body;
+
+    if (!username) return res.status(400).json({ message: "Username required" });
+    if (!books[isbn] || !books[isbn].reviews[username])
+        return res.status(404).json({ message: "Review not found" });
+
+    delete books[isbn].reviews[username];
+    return res.status(200).json({ message: "Review deleted", reviews: books[isbn].reviews });
+});
+
+// -----------------------
+// Task 10-13 Testing Functions
+// -----------------------
+async function getAllBooks() {
+    try {
+        const booksList = await getBooks();
+        console.log("Task 10 – All Books:");
+        console.log(booksList);
+    } catch (error) {
+        console.error("Task 10 Error:", error);
+    }
+}
+
+function getBookByISBN(isbn) {
+    getByISBN(isbn)
+        .then(book => {
+            console.log(`Task 11 – Book with ISBN ${isbn}:`);
+            console.log(book);
+        })
+        .catch(error => console.error(`Task 11 Error: ${error.message || error}`));
+}
+
+function getBooksByAuthor(author) {
+    getBooks()
+        .then(allBooks => Object.values(allBooks))
+        .then(allBooks => allBooks.filter(book => book.author === author))
+        .then(filteredBooks => {
+            console.log(`Task 12 – Books by Author ${author}:`);
+            console.log(filteredBooks);
+        })
+        .catch(error => console.error(`Task 12 Error: ${error}`));
+}
+
+function getBooksByTitle(title) {
+    getBooks()
+        .then(allBooks => Object.values(allBooks))
+        .then(allBooks => allBooks.filter(book => book.title === title))
+        .then(filteredBooks => {
+            console.log(`Task 13 – Books with Title "${title}":`);
+            console.log(filteredBooks);
+        })
+        .catch(error => console.error(`Task 13 Error: ${error}`));
+}
+
+// Optional: Call all functions sequentially for testing
+(async () => {
+    await getAllBooks();
+    getBookByISBN(1);
+    getBooksByAuthor("Chinua Achebe");
+    getBooksByTitle("Things Fall Apart");
+})();
 
 module.exports.general = public_users;
